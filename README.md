@@ -4,8 +4,21 @@
 
 We use [pyminisim](https://github.com/TimeEscaper/pyminisim/tree/master?tab=readme-ov-file) for social navigation simulator. Our simulator is a combination of [HSFM](https://github.com/francescofarina/HeadedSocialForceModel?tab=readme-ov-file) algorithm for pedastrians movements and MPC for robot control.
 
-Instructions for install are at pyminisim folder.
+### Installation:
+```
+cd pyminisim
+pip install -e .
+```
 
+```
+git clone https://github.com/sybrenstuvel/Python-RVO2.git
+cd Python-RVo2
+pip install -r requirements.txt
+python setup.py build
+python setup.py install
+```
+
+### Generating trajectories
 For visualization of generated trajectory, run:
 
 ```
