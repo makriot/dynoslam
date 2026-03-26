@@ -2,9 +2,17 @@ import pandas as pd
 import numpy as np
 
 class DataProcessor:
-    def __init__(self, csv_file, window_size=10, dt=0.1, max_range=10.0,
+    def __init__(self, csv_file, window_size=10, dt=0.11, max_range=10.0,
                  noise_odom_v=0.05, noise_odom_w=0.05,
                  noise_obs_r=0.05, noise_obs_phi=0.02):
+        """
+        parameters:
+        ---
+        csv_file: dataset
+        window_size:
+        dt:
+        max_range: maximum range from robot to landmarks 
+        """
         self.csv_file = csv_file
         self.window_size = window_size
         self.dt = dt
@@ -79,5 +87,7 @@ class DataProcessor:
                 'init_robot_pose': init_robot_pose,
                 'odometry': np.array(odometry),
                 'observations': observations,
+                'true_trajectory': [step['robot_state'] for step in window_steps],
+                'true_landmarks': [step['true_lms'] for step in window_steps]
             })
         return windows
