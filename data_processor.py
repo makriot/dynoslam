@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+import torch
 
 class DataProcessor:
     def __init__(self, csv_file, window_size=10, dt=0.11, max_range=10.0,
                  noise_odom_v=0.05, noise_odom_w=0.05,
-                 noise_obs_r=0.05, noise_obs_phi=0.02):
+                 noise_obs_r=0.05, noise_obs_phi=0.02,
+                 history_len=5):
         """
         parameters:
         ---
@@ -17,6 +19,7 @@ class DataProcessor:
         self.window_size = window_size
         self.dt = dt
         self.max_range = max_range
+        self.history_len = history_len
         
         # Параметры шума
         self.noise_odom_v = noise_odom_v
@@ -82,12 +85,44 @@ class DataProcessor:
                             'bearing': phi + np.random.normal(0, self.noise_obs_phi)
                         })
                 observations.append(step_obs)
+            
+            # --- СБОР ИСТОРИИ ДЛЯ НЕЙРОНКИ ---
+            window_lm_ids = set()
+            for obs_step in observations:
+                for obs in obs_step:
+                    window_lm_ids.add(obs['lm_id'])
+                    
+            start_hist = max(0, i - self.history_len)
+            history_steps = time_data[start_hist : i]
+            
+            lm_history = {}
+            for lmid in window_lm_ids:
+                hist_traj = []
+                for h_step in history_steps:
+                    if lmid in h_step['true_lms']:
+                        hist_traj.append(h_step['true_lms'][lmid])
+                
+                # Если истории нет (начало эпизода) - дублируем первую известную координату
+                if len(hist_traj) == 0:
+                    first_pos = np.array([0.0, 0.0])
+                    for step in window_steps:
+                        if lmid in step['true_lms']:
+                            first_pos = step['true_lms'][lmid]
+                            break
+                    hist_traj = [first_pos] * self.history_len
+                # Если история короче нужной (недавно появился) - добиваем дублями
+                elif len(hist_traj) < self.history_len:
+                    pad_len = self.history_len - len(hist_traj)
+                    hist_traj = [hist_traj[0]] * pad_len + hist_traj
+                    
+                lm_history[lmid] = torch.tensor(np.array(hist_traj), dtype=torch.float32)
                 
             windows.append({
                 'init_robot_pose': init_robot_pose,
                 'odometry': np.array(odometry),
                 'observations': observations,
                 'true_trajectory': [step['robot_state'] for step in window_steps],
-                'true_landmarks': [step['true_lms'] for step in window_steps]
+                'true_landmarks': [step['true_lms'] for step in window_steps],
+                'lm_history': lm_history
             })
         return windows

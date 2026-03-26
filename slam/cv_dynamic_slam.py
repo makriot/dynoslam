@@ -17,7 +17,7 @@ class CVDynamicSLAM(BaseDynamicSLAM):
         self.sigma_obs_phi = sigma_obs_phi
         self.sigma_acc = sigma_acc
 
-    def forward(self, init_robot_pose, odometry, observations, num_epochs=100, prediction_horizon=10):
+    def forward(self, init_robot_pose, odometry, observations, lm_history=None, num_epochs=100, prediction_horizon=10):
         W = self.window_size
         
         lm_ids = set()

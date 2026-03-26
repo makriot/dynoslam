@@ -165,10 +165,12 @@ def evaluate_episode(slam_model, dp, episode_id, num_epochs=100, plot_window_idx
                     'bearing': torch.tensor(o['bearing'], dtype=torch.float32)
                 })
             observations.append(obs_step_tensors)
+        
+        lm_history = w.get('lm_history', None)
             
         start_time = time.time()
         robot_poses, landmarks, predictions = slam_model(
-            init_pose, odom, observations, num_epochs=num_epochs, prediction_horizon=10
+            init_pose, odom, observations, lm_history=lm_history, num_epochs=num_epochs, prediction_horizon=10
         )
         elapsed_ms = (time.time() - start_time) * 1000
         time_list.append(elapsed_ms)
