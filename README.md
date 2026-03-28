@@ -90,5 +90,5 @@ python main_eval_gat_parallel.py
 
 ## Authors
 
-- **Danil Tokhchukov** (Skoltech, Moscow, Russia)  
-- **Veronika Morozova** (Skoltech, Moscow, Russia)
+- [**Danil Tokhchukov**](https://github.com/makriot) (Skoltech, Moscow, Russia)  
+- [**Veronika Morozova**](https://github.com/NikaMorozova) (Skoltech, Moscow, Russia)
