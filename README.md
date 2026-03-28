@@ -1,4 +1,6 @@
-# Dynamic SLAM
+# DynoSLAM
+
+![](assets/dyno.png)
 
 ## Simulator
 
