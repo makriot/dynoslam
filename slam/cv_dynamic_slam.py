@@ -19,6 +19,8 @@ class CVDynamicSLAM(BaseDynamicSLAM):
 
     def forward(self, init_robot_pose, odometry, observations, lm_history=None, num_epochs=100, prediction_horizon=10):
         W = self.window_size
+
+        device = "cpu"
         
         lm_ids = set()
         for obs_step in observations:
@@ -28,8 +30,8 @@ class CVDynamicSLAM(BaseDynamicSLAM):
         M = len(lm_ids)
         lm_id_to_idx = {lmid: idx for idx, lmid in enumerate(lm_ids)}
 
-        robot_poses = nn.Parameter(torch.zeros(W + 1, 3))
-        landmarks = nn.Parameter(torch.zeros(W + 1, M, 2))
+        robot_poses = nn.Parameter(torch.zeros(W + 1, 3, device=device))
+        landmarks = nn.Parameter(torch.zeros(W + 1, M, 2, device=device))
 
         # =================================================================
         # ПРЕДОБРАБОТКА (Вне цикла оптимизации!)
@@ -110,9 +112,9 @@ class CVDynamicSLAM(BaseDynamicSLAM):
                 loss += torch.sum(((wrap_angle(phi_pred - meas_phi) / self.sigma_obs_phi)**2)[obs_mask])
 
             # 4. Kinematic Factor (Уже было векторизовано)
-            if W >= 2 and M > 0:
-                accel = landmarks[2:] - 2 * landmarks[1:-1] + landmarks[:-2]
-                loss += torch.sum((accel / self.sigma_acc)**2)
+            # if W >= 2 and M > 0:
+            #     accel = landmarks[2:] - 2 * landmarks[1:-1] + landmarks[:-2]
+            #     loss += torch.sum((accel / self.sigma_acc)**2)
 
             loss.backward()
             optimizer.step()

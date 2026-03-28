@@ -116,13 +116,16 @@ class DataProcessor:
                     hist_traj = [hist_traj[0]] * pad_len + hist_traj
                     
                 lm_history[lmid] = torch.tensor(np.array(hist_traj), dtype=torch.float32)
-                
+            
+            current_window_end_time = window_steps[-1]['time'] if 'time' in window_steps[-1] else None
+
             windows.append({
                 'init_robot_pose': init_robot_pose,
                 'odometry': np.array(odometry),
                 'observations': observations,
                 'true_trajectory': [step['robot_state'] for step in window_steps],
                 'true_landmarks': [step['true_lms'] for step in window_steps],
-                'lm_history': lm_history
+                'lm_history': lm_history,
+                'end_time': current_window_end_time
             })
         return windows

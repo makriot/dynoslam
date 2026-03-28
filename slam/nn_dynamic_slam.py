@@ -23,11 +23,16 @@ class NeuralDynamicSLAM(BaseDynamicSLAM):
         self.sigma_obs_phi = sigma_obs_phi
         self.sigma_kin = sigma_kin
 
-    def forward(self, init_robot_pose, odometry, observations, lm_history=None, num_epochs=100, prediction_horizon=10):
+    def forward(self, init_robot_pose, odometry, observations, lm_history=None, num_epochs=100, prediction_horizon=10, stochastic=True):
         """
         :param lm_history: dict {lm_id: tensor[history_len, 2]} - история координат перед окном
         """
         W = self.window_size
+
+        device = next(self.predictor.parameters()).device
+
+        init_robot_pose = init_robot_pose.to(device)
+        odometry = odometry.to(device)
         
         # 1. Извлекаем ID всех наблюдаемых landmarks
         lm_ids = set()
@@ -38,34 +43,52 @@ class NeuralDynamicSLAM(BaseDynamicSLAM):
         M = len(lm_ids)
         lm_id_to_idx = {lmid: idx for idx, lmid in enumerate(lm_ids)}
 
-        robot_poses = nn.Parameter(torch.zeros(W + 1, 3))
-        landmarks = nn.Parameter(torch.zeros(W + 1, M, 2))
+        robot_poses = nn.Parameter(torch.zeros(W + 1, 3, device=device))
+        landmarks = nn.Parameter(torch.zeros(W + 1, M, 2, device=device))
 
         # ---------------------------------------------------------
         # ШАГ 1: ПРЕДСКАЗАНИЕ НЕЙРОНКИ (Prior для графа)
         # ---------------------------------------------------------
         # Готовим батч истории для нейронки [M, history_len, 2]
+        device = next(self.predictor.parameters()).device
+
         H_len = self.predictor.history_len
-        hist_batch = torch.zeros((M, H_len, 2))
+        hist_batch = torch.zeros((M, H_len, 2), device=device)
         
         if lm_history is not None:
             for lmid, idx in lm_id_to_idx.items():
                 if lmid in lm_history:
-                    hist_batch[idx] = lm_history[lmid]
+                    hist_batch[idx] = lm_history[lmid].to(device)
                 else:
                     # Если пешеход только появился, история = 0 (будет стоять на месте)
                     hist_batch[idx] = 0.0 
 
-        # Получаем предсказанные скорости на всё окно W: shape [M, W, 2]
-        with torch.no_grad():
-            predicted_velocities = self.predictor(hist_batch, num_steps=W)
+        if stochastic:
+            with torch.no_grad():
+                N_samples = 5
+                all_preds = []
+                
+                for _ in range(N_samples):
+                    # ВАЖНО: передаем ЧИСТУЮ историю, без шума!
+                    # Но мы передаем флаг mc_noise=True, чтобы GAT сам зашумел свои решения
+                    pred_v = self.predictor(hist_batch, num_steps=W, mc_noise=True)
+                    all_preds.append(pred_v)
+                    
+                all_preds = torch.stack(all_preds) # [N, M, W, 2]
+                
+                mu_v = torch.mean(all_preds, dim=0) # [M, W, 2]
+                var_v = torch.var(all_preds, dim=0) + (self.sigma_kin ** 2) # [M, W, 2]
+        else:
+            # Получаем предсказанные скорости на всё окно W: shape [M, W, 2]
+            with torch.no_grad():
+                predicted_velocities = self.predictor(hist_batch, num_steps=W)
 
         # ---------------------------------------------------------
         # ШАГ 2: ИНИЦИАЛИЗАЦИЯ И ПРЕДОБРАБОТКА МАТРИЦ 
         # ---------------------------------------------------------
-        meas_r = torch.zeros(W, M)
-        meas_phi = torch.zeros(W, M)
-        obs_mask = torch.zeros(W, M, dtype=torch.bool)
+        meas_r = torch.zeros(W, M, device=device)
+        meas_phi = torch.zeros(W, M, device=device)
+        obs_mask = torch.zeros(W, M, dtype=torch.bool, device=device)
         
         for i in range(W):
             for obs in observations[i]:
@@ -138,11 +161,33 @@ class NeuralDynamicSLAM(BaseDynamicSLAM):
             if W >= 1 and M > 0:
                 # landmarks[1:] - landmarks[:-1] это реальные смещения в окне, shape [W, M, 2]
                 # predicted_velocities имеет форму [M, W, 2], транспонируем в [W, M, 2]
-                v_pred_W_M_2 = predicted_velocities.transpose(0, 1)
-                
-                # Считаем разницу между ожидаемым сдвигом нейронки и оптимизируемым сдвигом
-                kin_err = (landmarks[1:] - landmarks[:-1]) - (v_pred_W_M_2 * self.dt)
-                loss += torch.sum((kin_err / self.sigma_kin)**2)
+                if stochastic:
+                    mu_v_W = mu_v.permute(1, 0, 2)
+                    var_v_W = var_v.permute(1, 0, 2)
+                    
+                    # Мат. ожидание сдвига (\mu * dt)
+                    expected_shift = mu_v_W * self.dt
+                    
+                    # Дисперсия сдвига (\Sigma * dt^2)
+                    expected_var = var_v_W * (self.dt ** 2)
+                    
+                    # Реальный сдвиг в SLAM-графе (m_i - m_{i-1})
+                    actual_shift = landmarks[1:] - landmarks[:-1] # [W, M, 2]
+                    
+                    # Формула Махаланобиса для диагональной матрицы: (x - \mu)^2 / \sigma^2
+                    # Жесткость пружины автоматически падает там, где дисперсия (expected_var) большая!
+                    mahalanobis_sq = ((actual_shift - expected_shift) ** 2) / expected_var
+                    
+                    # Обнуляем лосс для фантомных/невидимых пешеходов с помощью obs_mask
+                    # obs_mask форма [W, M]
+                    active_mask = obs_mask.unsqueeze(-1).expand_as(mahalanobis_sq)
+                    loss += torch.sum(mahalanobis_sq * active_mask)
+                else:
+                    v_pred_W_M_2 = predicted_velocities.transpose(0, 1)
+                    
+                    # Считаем разницу между ожидаемым сдвигом нейронки и оптимизируемым сдвигом
+                    kin_err = (landmarks[1:] - landmarks[:-1]) - (v_pred_W_M_2 * self.dt)
+                    loss += torch.sum((kin_err / self.sigma_kin)**2)
 
             loss.backward()
             optimizer.step()
@@ -158,7 +203,7 @@ class NeuralDynamicSLAM(BaseDynamicSLAM):
                 available_len = min(W + 1, H_len)
                 pad_len = H_len - available_len
                 
-                opt_hist = torch.zeros((M, H_len, 2))
+                opt_hist = torch.zeros((M, H_len, 2), device=device)
                 if pad_len > 0:
                     opt_hist[:, :pad_len, :] = hist_batch[:, -pad_len:, :]
                 opt_hist[:, pad_len:, :] = landmarks[-available_len:].transpose(0, 1)
