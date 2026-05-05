@@ -1,5 +1,9 @@
 # DynoSLAM: Dynamic SLAM with Generative Graph Neural Networks for Real-World Social Navigation
 
+<div align="center">
+  <a href='https://arxiv.org/abs/2605.02759'><img src='https://img.shields.io/badge/ArXiv-red?logo=arxiv'></a>  &nbsp;
+</div>
+
 ![](assets/dyno.png)
 
 <br>
