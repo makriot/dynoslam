@@ -62,7 +62,7 @@ python -m examples.data_generator --mode visual --ped_count 10 20 --speed_range 
 
 to generate trajectories:
 ```
-python -m examples.data_generator --mode dataset --num_episodes 10000 --ped_count 5 20 --speed_range 0.8 1.5 --tau_range 0.2 0.6 --output all_data.csv
+python -m examples.data_generator --mode dataset --num_episodes 10000 --ped_count 1 15 --speed_range 0.8 1.5 --tau_range 0.2 0.6 --output all_data.csv
 ```
 
 ## Getting Started (SLAM Pipeline)
